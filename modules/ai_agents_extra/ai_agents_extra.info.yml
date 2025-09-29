@@ -1,0 +1,10 @@
+name: AI Agents Extra
+type: module
+description: Extra Agents (Views, Webform, Module) that still are experimental.
+package: AI Tools
+core_version_requirement: ^10.3 || ^11
+lifecycle: experimental
+hidden: true
+
+dependencies:
+  - ai_agents:ai_agents
