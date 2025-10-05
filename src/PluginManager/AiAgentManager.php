@@ -2,6 +2,7 @@
 
 namespace Drupal\ai_agents\PluginManager;
 
+use Drupal\Component\Plugin\Exception\PluginException;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Installer\InstallerKernel;
@@ -97,10 +98,17 @@ class AiAgentManager extends DefaultPluginManager {
    *   If the instance cannot be created, such as if the ID is invalid.
    */
   public function createInstance($plugin_id, array $configuration = []): AiAgentInterface {
-    // Check if the plugin is an action plugin.
-    if (isset($this->definitions[$plugin_id]['custom_type']) && $this->definitions[$plugin_id]['custom_type'] === 'config') {
-      $instance = new AiAgentEntityWrapper(
-        $this->entityTypeManager->getStorage('ai_agent')->load($plugin_id),
+    $definition = $this->getDefinition($plugin_id, FALSE);
+
+    // Handle configuration-backed agents that are exposed as pseudo-plugins.
+    if (isset($definition['custom_type']) && $definition['custom_type'] === 'config') {
+      $agent = $this->entityTypeManager->getStorage('ai_agent')->load($plugin_id);
+      if (!$agent) {
+        throw new PluginException(sprintf('Unable to load AI agent configuration for "%s".', $plugin_id));
+      }
+
+      return new AiAgentEntityWrapper(
+        $agent,
         $this->currentUser,
         $this->entityTypeManager,
         $this->functionCallPluginManager,
@@ -111,8 +119,8 @@ class AiAgentManager extends DefaultPluginManager {
         $this->artifactHelper,
         $this->uuid,
       );
-      return $instance;
     }
+
     return parent::createInstance($plugin_id, $configuration);
   }
 

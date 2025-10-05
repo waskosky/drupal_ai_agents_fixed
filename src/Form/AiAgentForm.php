@@ -446,6 +446,13 @@ final class AiAgentForm extends EntityForm {
       '#default_value' => $this->entity->get('tool_settings')[$tool_definition['id']]['return_directly'] ?? FALSE,
     ];
 
+    $form['prompt_detail']['tool_usage'][$tool_definition['id']]['require_usage'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Require Usage'),
+      '#description' => $this->t('Check this box if there should be a reminder to the agent anytime it tries to output text, but this tool has not been used.'),
+      '#default_value' => $this->entity->get('tool_settings')[$tool_definition['id']]['require_usage'] ?? FALSE,
+    ];
+
     // Allow to override description.
     $form['prompt_detail']['tool_usage'][$tool_definition['id']]['description_enabled'] = [
       '#type' => 'checkbox',
@@ -689,6 +696,7 @@ final class AiAgentForm extends EntityForm {
       foreach ($form_state->getValue('tool_usage') as $tool_id => $tool_usage) {
         // Check if it should return directly.
         $tool_settings[$tool_id]['return_directly'] = $tool_usage['return_directly'] ?? FALSE;
+        $tool_settings[$tool_id]['require_usage'] = $tool_usage['require_usage'] ?? FALSE;
         // Check if description override is enabled.
         if (!empty($tool_usage['description_enabled'])) {
           $tool_settings[$tool_id]['description_override'] = $tool_usage['description_override'] ?? '';

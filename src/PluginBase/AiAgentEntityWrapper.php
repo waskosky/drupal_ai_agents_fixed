@@ -578,6 +578,15 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
         return $this->determineSolvability();
       }
     }
+    elseif (!empty($this->allRequiredToolsRan())) {
+      // Add to the chat history that we did not use the required tools.
+      $required_tools = $this->allRequiredToolsRan();
+      $tool_list = implode(', ', $required_tools);
+      $this->chatHistory[] = new ChatMessage('system', "Reminder: The following tools should be used based on the instructions, but were not used: $tool_list. Please make sure to use them in your next response.");
+      if ($this->loopedEnabled) {
+        return $this->determineSolvability();
+      }
+    }
     else {
       $this->finished = TRUE;
       $event = new AgentFinishedExecutionEvent(
@@ -1002,6 +1011,39 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
   }
 
   /**
+   * Helper function for checking if all the required tools have ran.
+   *
+   * @return array
+   *   An array of required tools that have not ran.
+   */
+  public function allRequiredToolsRan(): array {
+    // Use overridden functions, if set.
+    $required_not_ran = [];
+    $settings = $this->functionsOverride['tool_settings'] ?? $this->aiAgent->get('tool_settings');
+    foreach ($settings as $plugin_id => $tool_settings) {
+      if (!empty($tool_settings['require_usage'])) {
+        $function_name = $this->functionCallPluginManager->getDefinition($plugin_id)['function_name'];
+        $found_required = FALSE;
+        foreach ($this->chatHistory as $message) {
+          if (!empty($message->getTools())) {
+            foreach ($message->getTools() as $tool) {
+              $input = $tool->getName();
+              if ($input == $function_name) {
+                // We found the tool in the history, so we can return true.
+                $found_required = TRUE;
+              }
+            }
+          }
+        }
+        if (!$found_required) {
+          $required_not_ran[] = $function_name;
+        }
+      }
+    }
+    return $required_not_ran;
+  }
+
+  /**
    * Helper function for checking if a tool should use artifacts.
    *
    * @return bool
@@ -1123,6 +1165,12 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
         // Set the caller agent runner id.
         if ($this->runnerId) {
           $tool->getAgent()->setCallerAgentRunnerId($this->runnerId);
+        }
+        // Also inherit the provider, if it has some settings.
+        if ($this->aiProvider) {
+          $tool->getAgent()->setAiProvider($this->aiProvider);
+          $tool->getAgent()->setModelName($this->modelName);
+          $tool->getAgent()->setAiConfiguration($this->aiConfiguration);
         }
       }
     }
