@@ -2,6 +2,9 @@
 
 namespace Drupal\ai_agents\EventSubscriber;
 
+use Drupal\ai\OperationType\Chat\ChatInput;
+use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\ai\OperationType\Chat\Tools\ToolsInputInterface;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Drupal\ai_agents\Enum\AiAgentStatusItemTypes;
 use Drupal\Component\Datetime\TimeInterface;
@@ -181,13 +184,42 @@ class AgentStatusSubscriber implements EventSubscriberInterface {
         agent_name: $event->getAgent()->getAiAgentEntity()->label(),
         agent_runner_id: $event->getAgentRunnerId(),
         loop_count: $event->getLoopCount(),
-        request_data: $event->getChatInput()->toArray(),
+        request_data: $this->normalizeChatInput($event->getChatInput()),
         provider_name: $event->getAgent()->getAiProvider()->getPluginId(),
         model_name: $event->getAgent()->getModelName(),
         config: $event->getAgent()->getAiConfiguration(),
         calling_agent_id: $event->getCallerId(),
       ));
     }
+  }
+
+  /**
+   * Convert a chat input object into a serializable array.
+   */
+  protected function normalizeChatInput(ChatInput $input): array {
+    $messages = [];
+    foreach ($input->getMessages() as $message) {
+      if ($message instanceof ChatMessage) {
+        $messages[] = $message->toArray();
+      }
+      else {
+        $messages[] = $message;
+      }
+    }
+
+    $tools = $input->getChatTools();
+    $tools_array = [];
+    if ($tools instanceof ToolsInputInterface) {
+      $tools_array = $tools->renderToolsArray();
+    }
+
+    return [
+      'messages' => $messages,
+      'tools' => $tools_array,
+      'structured_json_schema' => $input->getChatStructuredJsonSchema(),
+      'debug' => $input->getDebugData(),
+      'string_representation' => $input->toString(),
+    ];
   }
 
   /**

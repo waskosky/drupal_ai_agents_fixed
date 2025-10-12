@@ -9,7 +9,6 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
-use Drupal\ai\Service\FunctionCalling\ExecutableFunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\FunctionCallInterface;
 use Drupal\ai\Service\FunctionCalling\FunctionCallPluginManager;
 use Drupal\ai\Service\FunctionCalling\FunctionGroupPluginManager;
@@ -270,104 +269,19 @@ final class AiAgentForm extends EntityForm {
       '#open' => TRUE,
     ];
 
-    $form['prompt_detail']['tools_box']['filter'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Filter'),
-      '#description' => $this->t('Filter the tools by name.'),
-      '#attributes' => [
-        'autocomplete' => 'off',
-      ],
-      '#weight' => -10000,
-    ];
-
     $function_call_plugin_manager = $this->functionCallPluginManager;
-    $function_group_plugin_manager = $this->functionGroupPluginManager;
 
-    foreach ($function_call_plugin_manager->getDefinitions() as $plugin_id => $definition) {
-      // Check so the class implements ExecutableFunctionCallInterface.
-      if (!isset($definition['class']) || !is_subclass_of($definition['class'], ExecutableFunctionCallInterface::class)) {
-        continue;
-      }
-      $group = $definition['group'];
-      if ($group && $function_group_plugin_manager->hasDefinition($group)) {
-        $group_details = $function_group_plugin_manager->getDefinition($group);
-        if (!isset($form['prompt_detail']['tools_box'][$group])) {
-          $form['prompt_detail']['tools_box'][$group] = [
-            '#type' => 'details',
-            '#title' => $group_details['group_name'],
-            '#description' => $group_details['description'],
-            '#weight' => $group_details['weight'] ?? 0,
-            '#open' => TRUE,
-          ];
-
-          $form['prompt_detail']['tools_box'][$group]['wrapper'] = [
-            '#type' => 'container',
-            '#attributes' => [
-              'class' => ['tool-wrapper-container'],
-            ],
-          ];
-        }
-        // Special rules as well to not show it self.
-        if ($this->entity && $plugin_id === 'ai_agent:' . $this->entity->id()) {
-          continue;
-        }
-        $form['prompt_detail']['tools_box'][$group]['wrapper']['tool__' . $plugin_id] = [
-          '#prefix' => '<div class="tool-wrapper" data-id="' . $plugin_id . '">',
-          '#suffix' => '</div>',
-          '#type' => 'checkbox',
-          '#title' => $definition['name'],
-          '#default_value' => $this->entity->get('tools')[$plugin_id] ?? '',
-          '#ajax' => [
-            'callback' => '::modifyToolDescription',
-            'wrapper' => 'tool-usage',
-            'event' => 'change',
-          ],
-        ];
-        $description = '';
-        if ($this->moduleHandler->moduleExists('ai_api_explorer')) {
-          $description .= '[' . Link::createFromRoute($this->t('Test this tool'), 'ai_api_explorer.form.tools_explorer', [], [
-            'query' => [
-              'tool' => $plugin_id,
-            ],
-            'attributes' => [
-              'target' => '_blank',
-            ],
-          ])->toString() . ']<br>';
-        }
-        $description .= $definition['description'] ?? '';
-        if ($definition['description']) {
-          $form['prompt_detail']['tools_box'][$group]['wrapper']['tool__' . $plugin_id]['#description'] = $description;
-        }
-      }
-      else {
-        $other['tool__' . $plugin_id] = [
-          '#type' => 'checkbox',
-          '#title' => $definition['name'],
-          '#default_value' => $this->entity->get('tools')[$plugin_id] ?? '',
-        ];
-        if ($definition['description']) {
-          $other['tool__' . $plugin_id]['#description'] = $definition['description'];
-        }
-      }
-    }
-
-    if (count($other)) {
-      $form['prompt_detail']['tools_box']['other'] = [
-        '#type' => 'details',
-        '#title' => $this->t('Other tools'),
-        '#description' => $this->t('A list of tools that are not grouped.'),
-        '#open' => TRUE,
-      ];
-      $form['prompt_detail']['tools_box']['other'] += $other;
-    }
+    $form['prompt_detail']['tools_box']['tools'] = [
+      '#type' => 'ai_tools_library',
+      '#title' => $this->t('Tools for this agent'),
+      '#default_value' => $this->entity->get('tools') ?? [],
+    ];
 
     // Selected tools.
     $selected_tools = [];
     if ($form_state->isRebuilding()) {
-      foreach ($form_state->getValues() as $key => $value) {
-        if (str_starts_with($key, 'tool__') && $value) {
-          $selected_tools[substr($key, 6)] = TRUE;
-        }
+      foreach ($form_state->getValue('tools') as $value) {
+        $selected_tools[$value] = TRUE;
       }
     }
     else {
@@ -676,10 +590,8 @@ final class AiAgentForm extends EntityForm {
    */
   public function save(array $form, FormStateInterface $form_state): int {
     $tools = [];
-    foreach ($form_state->getValues() as $key => $value) {
-      if (str_starts_with($key, 'tool__') && $value) {
-        $tools[substr($key, 6)] = TRUE;
-      }
+    foreach ($form_state->getValue('tools') as $value) {
+      $tools[$value] = TRUE;
     }
     $dependencies = [];
     // Remove unchecked values.

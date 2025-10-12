@@ -6,7 +6,9 @@ use Drupal\Component\Plugin\Exception\ContextException;
 use Drupal\Component\Render\FormattableMarkup;
 use Drupal\Component\Serialization\Json;
 use Drupal\Component\Uuid\UuidInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Plugin\DataType\EntityAdapter;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Utility\Token;
@@ -1067,7 +1069,9 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
 
     // Process each property with limits.
     foreach ($tool_limits[$function_call->getPluginId()] ?? [] as $property_name => $limit) {
-      $context_definition = $function_call->getContextDefinition($property_name);
+      // Allow configuration keys that stored ':' as '__colon__'.
+      $context_property_name = str_replace('__colon__', ':', $property_name);
+      $context_definition = $function_call->getContextDefinition($context_property_name);
 
       // Apply token in values if an action is set.
       if ($limit['action']) {
@@ -1199,6 +1203,7 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
    *   Thrown when context constraints are violated.
    */
   public function validateTool(ExecutableFunctionCallInterface $tool): void {
+    $this->normalizeEntityContextValues($tool);
     $violations = $tool->validateContexts();
     if (count($violations)) {
       throw new ContextException(implode("\n", array_map(
@@ -1212,6 +1217,96 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
         ]),
         (array) $violations->getIterator(),
       )));
+    }
+  }
+
+  /**
+   * Ensures entity contexts contain entity objects before validation.
+   */
+  protected function normalizeEntityContextValues(ExecutableFunctionCallInterface $tool): void {
+    foreach ($tool->getContextDefinitions() as $context_name => $definition) {
+      $data_type = $definition->getDataType();
+      $entity_type_id = NULL;
+
+      if (is_string($data_type) && str_starts_with($data_type, 'entity:')) {
+        $entity_type_id = substr($data_type, 7);
+      }
+      elseif ($data_type === 'entity') {
+        $plugin_type = $tool->getPluginDefinition()['type'] ?? '';
+        if (is_string($plugin_type) && $plugin_type !== '' && $this->entityTypeManager->getDefinition($plugin_type, FALSE)) {
+          $entity_type_id = $plugin_type;
+        }
+      }
+
+      $context = $tool->getContext($context_name);
+      if (!$context->hasContextValue()) {
+        continue;
+      }
+
+      $context_value = NULL;
+      try {
+        $context_value = $context->getContextValue();
+      }
+      catch (\Throwable $e) {
+        continue;
+      }
+
+      $context_data = $context->getContextData();
+      if ($context_data instanceof EntityAdapter) {
+        $entity = $context_data->getValue();
+        if ($entity instanceof EntityInterface) {
+          $tool->setContextValue($context_name, $entity);
+          continue;
+        }
+      }
+
+      if ($context_value instanceof EntityInterface) {
+        continue;
+      }
+      $entity = NULL;
+      $candidate_id = NULL;
+
+      if (is_array($context_value)) {
+        if (isset($context_value['entity']) && $context_value['entity'] instanceof EntityInterface) {
+          $entity = $context_value['entity'];
+        }
+        elseif (isset($context_value['target_id'])) {
+          $candidate_id = $context_value['target_id'];
+        }
+        elseif (isset($context_value[0]) && (is_int($context_value[0]) || is_string($context_value[0]))) {
+          $candidate_id = $context_value[0];
+        }
+      }
+      elseif (is_int($context_value) || is_string($context_value)) {
+        $candidate_id = $context_value;
+      }
+
+      if (!$entity && is_string($candidate_id) && str_contains($candidate_id, ':')) {
+        [$maybe_type, $maybe_id] = explode(':', $candidate_id, 2);
+        if ($entity_type_id === NULL && $this->entityTypeManager->getDefinition($maybe_type, FALSE)) {
+          $entity_type_id = $maybe_type;
+        }
+        $candidate_id = $maybe_id;
+      }
+
+      if (!$entity_type_id || $candidate_id === NULL || $candidate_id === '') {
+        continue;
+      }
+
+      $entity_definition = $this->entityTypeManager->getDefinition($entity_type_id, FALSE);
+      if (!$entity_definition) {
+        continue;
+      }
+
+      $storage = $this->entityTypeManager->getStorage($entity_type_id);
+      if (!$storage) {
+        continue;
+      }
+
+      $loaded = $storage->load($candidate_id);
+      if ($loaded instanceof EntityInterface) {
+        $tool->setContextValue($context_name, $loaded);
+      }
     }
   }
 
