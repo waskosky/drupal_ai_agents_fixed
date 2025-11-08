@@ -66,7 +66,7 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
    *
    * @var array
    */
-  protected $aiConfiguration;
+  protected $aiConfiguration = [];
 
   /**
    * The Task.
@@ -282,13 +282,19 @@ class AiAgentEntityWrapper implements PluginInterfacesAiAgentInterface, ConfigAi
    * {@inheritDoc}
    */
   public function getAiConfiguration() {
-    return $this->aiConfiguration;
+    return $this->aiConfiguration ?? [];
   }
 
   /**
    * {@inheritDoc}
    */
   public function setAiConfiguration($configuration) {
+    if ($configuration === NULL) {
+      $configuration = [];
+    }
+    elseif (!is_array($configuration)) {
+      $configuration = (array) $configuration;
+    }
     $this->aiConfiguration = $configuration;
   }
 
