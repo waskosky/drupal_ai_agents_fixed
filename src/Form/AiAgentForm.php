@@ -261,7 +261,6 @@ final class AiAgentForm extends EntityForm {
       $this->moduleHandler->moduleExists('token'),
     );
 
-    $other = [];
     $form['prompt_detail']['tools_box'] = [
       '#type' => 'details',
       '#title' => $this->t('Tools'),
@@ -622,7 +621,10 @@ final class AiAgentForm extends EntityForm {
           foreach ($tool_usage['property_restrictions'] as $property_name => $values) {
             // Only set if an action is set.
             if ($values['action']) {
-              $tool_usage['property_restrictions'][$property_name]['values'] = explode("\n", $values['values']);
+              $cleaned_values = str_replace("\r\n", "\n", $values['values'] ?? '');
+              // Trim and remove all empty values.
+              $all_values = array_filter(array_map('trim', explode("\n", $cleaned_values)));
+              $tool_usage['property_restrictions'][$property_name]['values'] = $all_values;
             }
             else {
               unset($tool_usage[$property_name]);
@@ -645,7 +647,7 @@ final class AiAgentForm extends EntityForm {
           }
         }
         if (count($tool_usage)) {
-          $tool_usage_limits[$tool_id] = $tool_usage['property_restrictions'];
+          $tool_usage_limits[$tool_id] = $tool_usage['property_restrictions'] ?? [];
         }
       }
     }
@@ -673,7 +675,7 @@ final class AiAgentForm extends EntityForm {
     $this->entity->set('tools', $tools);
     // Make sure to remove \r characters from the yaml fields for nice YAML.
     // See: https://www.drupal.org/project/drupal/issues/3202796.
-    $system_prompt = str_replace("\r\n", "\n", $form_state->getValue('system_prompt'));
+    $system_prompt = str_replace("\r\n", "\n", $form_state->getValue('system_prompt') ?? '');
     $this->entity->set('system_prompt', $system_prompt);
     $default_information_tools = str_replace("\r\n", "\n", $form_state->getValue('default_information_tools') ?? '');
     $this->entity->set('default_information_tools', $default_information_tools);

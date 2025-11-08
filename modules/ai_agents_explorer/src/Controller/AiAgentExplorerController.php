@@ -120,13 +120,14 @@ class AiAgentExplorerController extends ControllerBase {
    *   The JSON response.
    */
   public function runAgent() {
-    // Get the prompt from the request.
-    $prompt = $this->currentRequest->get('prompt');
-    $agent_name = $this->currentRequest->get('agent');
-    $provider_name = $this->currentRequest->get('model');
-    $images = $this->currentRequest->get('images');
-    $runner_id = $this->currentRequest->get('runner_id');
-    $markdown = $this->currentRequest->get('markdown');
+    // Get the prompt from the post data.
+    $request = $this->currentRequest;
+    $prompt = $request->request->get('prompt');
+    $agent_name = $request->request->get('agent');
+    $provider_name = $request->request->get('model');
+    $images = $request->request->get('images');
+    $runner_id = $request->request->get('runner_id');
+    $markdown = $request->request->get('markdown');
 
     try {
       $provider = $this->providerManager->loadProviderFromSimpleOption($provider_name);
@@ -166,7 +167,7 @@ class AiAgentExplorerController extends ControllerBase {
     $agent->setCreateDirectly(TRUE);
 
     if ($agent instanceof ConfigAiAgentInterface) {
-      $token_input = array_filter($this->currentRequest->get('tokens') ?? []);
+      $token_input = array_filter($request->request->get('tokens') ?? []);
       $tokens = [];
       foreach ($token_input as $token_type => $token_value) {
         if ($this->entityTypeManager->hasDefinition($token_type)) {

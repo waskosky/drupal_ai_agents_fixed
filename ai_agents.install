@@ -222,10 +222,52 @@ function ai_agents_update_10306() {
 }
 
 /**
- * Update hook to install the modeler_api module.
+ * Update hook to clean up tool usage property restrictions.
  */
 function ai_agents_update_10307() {
-  if (!\Drupal::moduleHandler()->moduleExists('modeler_api')) {
-    \Drupal::service('module_installer')->install(['modeler_api']);
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $storage = $entity_type_manager->getStorage('ai_agent');
+
+  // Load all agents.
+  $agents = $storage->loadMultiple();
+
+  foreach ($agents as $agent) {
+    $tool_usage_limits = $agent->get('tool_usage_limits') ?? [];
+    $changed = FALSE;
+    foreach ($tool_usage_limits as $tool_id => $properties) {
+      // Clean up property restrictions.
+      if (!is_array($properties) || empty($properties)) {
+        continue;
+      }
+      foreach ($properties as $property_name => $values) {
+        // Check if values exists.
+        if (!empty($values['values']) && is_array($values['values'])) {
+          foreach ($values['values'] as $key => $value) {
+            // If the value ends with a \r, remove it.
+            if (substr($value, -1) === "\r") {
+              $tool_usage_limits[$tool_id][$property_name]['values'][$key] = rtrim($value, "\r");
+              $changed = TRUE;
+            }
+            // Remove empty values.
+            elseif ($value === '') {
+              unset($tool_usage_limits[$tool_id][$property_name]['values'][$key]);
+              $changed = TRUE;
+            }
+          }
+        }
+      }
+    }
+    // Set the cleaned tool usage limits back to the agent.
+    if ($changed) {
+      $agent->set('tool_usage_limits', $tool_usage_limits);
+      $agent->save();
+    }
   }
+}
+
+/**
+ * Update hook to install the modeler_api module.
+ */
+function ai_agents_update_10308() {
+  \Drupal::service('module_installer')->install(['modeler_api']);
 }
